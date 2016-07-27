@@ -73,16 +73,6 @@ function MdChipsCtrl ($scope, $mdConstant, $log, $element, $timeout, $mdUtil) {
   this.chipBuffer = '';
 
   /**
-   * Whether to use the onAppend expression to transform the chip buffer
-   * before appending it to the list.
-   * @type {boolean}
-   *
-   *
-   * @deprecated Will remove in 1.0.
-   */
-  this.useOnAppend = false;
-
-  /**
    * Whether to use the transformChip expression to transform the chip buffer
    * before appending it to the list.
    * @type {boolean}
@@ -106,7 +96,6 @@ function MdChipsCtrl ($scope, $mdConstant, $log, $element, $timeout, $mdUtil) {
    * after selecting a chip from the list.
    * @type {boolean}
    */
-  this.useOnSelect = false;
 }
 
 /**
@@ -124,10 +113,19 @@ MdChipsCtrl.prototype.inputKeydown = function(event) {
   }
 
   if (event.keyCode === this.$mdConstant.KEY_CODE.BACKSPACE) {
-    if (chipBuffer) return;
+    // Only select and focus the previous chip, if the current caret position of the
+    // input element is at the beginning.
+    if (this.getCursorPosition(event.target) !== 0) {
+      return;
+    }
+
     event.preventDefault();
     event.stopPropagation();
-    if (this.items.length) this.selectAndFocusChipSafe(this.items.length - 1);
+
+    if (this.items.length) {
+      this.selectAndFocusChipSafe(this.items.length - 1);
+    }
+
     return;
   }
 
@@ -144,8 +142,30 @@ MdChipsCtrl.prototype.inputKeydown = function(event) {
     // Only append the chip and reset the chip buffer if the max chips limit isn't reached.
     if (this.hasMaxChipsReached()) return;
 
-    this.appendChip(chipBuffer);
+    this.appendChip(chipBuffer.trim());
     this.resetChipBuffer();
+  }
+};
+
+/**
+ * Returns the cursor position of the specified input element.
+ * @param element HTMLInputElement
+ * @returns {Number} Cursor Position of the input.
+ */
+MdChipsCtrl.prototype.getCursorPosition = function(element) {
+  /*
+   * Figure out whether the current input for the chips buffer is valid for using
+   * the selectionStart / end property to retrieve the cursor position.
+   * Some browsers do not allow the use of those attributes, on different input types.
+   */
+  try {
+    if (element.selectionStart === element.selectionEnd) {
+      return element.selectionStart;
+    }
+  } catch (e) {
+    if (!element.value) {
+      return 0;
+    }
   }
 };
 
@@ -167,10 +187,20 @@ MdChipsCtrl.prototype.updateChipContents = function(chipIndex, chipContents){
  * Returns true if a chip is currently being edited. False otherwise.
  * @return {boolean}
  */
-MdChipsCtrl.prototype.isEditingChip = function(){
+MdChipsCtrl.prototype.isEditingChip = function() {
   return !!this.$element[0].getElementsByClassName('_md-chip-editing').length;
 };
 
+
+MdChipsCtrl.prototype.isRemovable = function() {
+  // Return false if we have static chips
+  if (!this.ngModelCtrl) {
+    return false;
+  }
+
+  return this.readonly ? this.removable :
+         angular.isDefined(this.removable) ? this.removable : true;
+};
 
 /**
  * Handles the keydown event on the chip elements: backspace removes the selected chip, arrow
@@ -186,6 +216,8 @@ MdChipsCtrl.prototype.chipKeydown = function (event) {
     case this.$mdConstant.KEY_CODE.DELETE:
       if (this.selectedChip < 0) return;
       event.preventDefault();
+      // Cancel the delete action only after the event cancel. Otherwise the page will go back.
+      if (!this.isRemovable()) return;
       this.removeAndSelectAdjacentChip(this.selectedChip);
       break;
     case this.$mdConstant.KEY_CODE.LEFT_ARROW:
@@ -213,7 +245,7 @@ MdChipsCtrl.prototype.chipKeydown = function (event) {
  */
 MdChipsCtrl.prototype.getPlaceholder = function() {
   // Allow `secondary-placeholder` to be blank.
-  var useSecondary = (this.items.length &&
+  var useSecondary = (this.items && this.items.length &&
       (this.secondaryPlaceholder == '' || this.secondaryPlaceholder));
   return useSecondary ? this.secondaryPlaceholder : this.placeholder;
 };
@@ -290,25 +322,6 @@ MdChipsCtrl.prototype.appendChip = function(newChip) {
   // If they provide the md-on-add attribute, notify them of the chip addition
   if (this.useOnAdd && this.onAdd) {
     this.onAdd({ '$chip': newChip, '$index': index });
-  }
-};
-
-/**
- * Sets whether to use the md-on-append expression. This expression is
- * bound to scope and controller in {@code MdChipsDirective} as
- * {@code onAppend}. Due to the nature of directive scope bindings, the
- * controller cannot know on its own/from the scope whether an expression was
- * actually provided.
- *
- * @deprecated
- *
- * TODO: Remove deprecated md-on-append functionality in 1.0
- */
-MdChipsCtrl.prototype.useOnAppendExpression = function() {
-  this.$log.warn("md-on-append is deprecated; please use md-transform-chip or md-on-add instead");
-  if (!this.useTransformChip || !this.transformChip) {
-    this.useTransformChip = true;
-    this.transformChip = this.onAppend;
   }
 };
 
@@ -468,7 +481,7 @@ MdChipsCtrl.prototype.selectAndFocusChip = function(index) {
  * Call `focus()` on the chip at `index`
  */
 MdChipsCtrl.prototype.focusChip = function(index) {
-  this.$element[0].querySelector('md-chip[index="' + index + '"] ._md-chip-content').focus();
+  this.$element[0].querySelector('md-chip[index="' + index + '"] .md-chip-content').focus();
 };
 
 /**

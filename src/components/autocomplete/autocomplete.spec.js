@@ -16,12 +16,17 @@ describe('<md-autocomplete>', function() {
     items = items || ['foo', 'bar', 'baz'].map(function(item) {
         return {display: item};
       });
-    inject(function($rootScope) {
+    inject(function($rootScope, $timeout) {
       scope = $rootScope.$new();
       scope.match = function(term) {
         return items.filter(function(item) {
           return item.display.indexOf(matchLowercase ? term.toLowerCase() : term) === 0;
         });
+      };
+      scope.asyncMatch = function(term) {
+        return $timeout(function() {
+          return scope.match(term)
+        }, 1000);
       };
       scope.searchText = '';
       scope.selectedItem = null;
@@ -53,7 +58,8 @@ describe('<md-autocomplete>', function() {
   }
 
   describe('basic functionality', function() {
-    it('should update selected item and search text', inject(function($timeout, $mdConstant, $material) {
+
+    it('updates selected item and search text', inject(function($timeout, $mdConstant, $material) {
       var scope = createScope();
       var template = '\
           <md-autocomplete\
@@ -97,9 +103,118 @@ describe('<md-autocomplete>', function() {
 
       element.remove();
     }));
-    
 
-    it('should allow you to set an input id without floating label', inject(function() {
+    it('should clear the searchText when the selectedItem manually got cleared',
+      inject(function($timeout, $material, $mdConstant) {
+        var scope = createScope();
+
+        var template =
+          '<md-autocomplete ' +
+              'md-selected-item="selectedItem" ' +
+              'md-search-text="searchText" ' +
+              'md-items="item in match(searchText)" ' +
+              'md-item-text="item.display" ' +
+              'placeholder="placeholder"> ' +
+            '<span md-highlight-text="searchText">{{item.display}}</span>' +
+          '</md-autocomplete>';
+
+        var element = compile(template, scope);
+        var ctrl = element.controller('mdAutocomplete');
+        var ul = element.find('ul');
+
+        $material.flushInterimElement();
+
+        expect(scope.searchText).toBe('');
+        expect(scope.selectedItem).toBe(null);
+
+        ctrl.focus();
+
+        scope.$apply('searchText = "fo"');
+        waitForVirtualRepeat(element);
+
+        expect(scope.searchText).toBe('fo');
+        expect(scope.match(scope.searchText).length).toBe(1);
+
+        expect(ul.find('li').length).toBe(1);
+
+        // Run our key events to trigger a select action
+        ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.DOWN_ARROW));
+        ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ENTER));
+        $timeout.flush();
+
+        expect(scope.searchText).toBe('foo');
+        expect(scope.selectedItem).toBe(scope.match(scope.searchText)[0]);
+
+        // Reset / Clear the current selected item.
+        scope.$apply('selectedItem = null');
+        waitForVirtualRepeat(element);
+
+        // Run our key events to trigger a select action
+        ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.DOWN_ARROW));
+        ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ENTER));
+        $timeout.flush();
+
+        // The autocomplete automatically clears the searchText when the selectedItem was cleared.
+        expect(scope.searchText).toBe('');
+        expect(scope.selectedItem).toBeFalsy();
+
+        element.remove();
+      }));
+
+    it('should should not clear the searchText when clearing the selected item from the input',
+      inject(function($timeout, $material, $mdConstant) {
+        var scope = createScope();
+
+        var template =
+          '<md-autocomplete ' +
+              'md-selected-item="selectedItem" ' +
+              'md-search-text="searchText" ' +
+              'md-items="item in match(searchText)" ' +
+              'md-item-text="item.display" ' +
+              'placeholder="placeholder"> ' +
+            '<span md-highlight-text="searchText">{{item.display}}</span>' +
+          '</md-autocomplete>';
+
+        var element = compile(template, scope);
+        var ctrl = element.controller('mdAutocomplete');
+        var input = element.find('input');
+        var ul = element.find('ul');
+
+        $material.flushInterimElement();
+
+        expect(scope.searchText).toBe('');
+        expect(scope.selectedItem).toBe(null);
+
+        ctrl.focus();
+
+        scope.$apply('searchText = "fo"');
+        waitForVirtualRepeat(element);
+
+        expect(scope.searchText).toBe('fo');
+        expect(scope.match(scope.searchText).length).toBe(1);
+
+        expect(ul.find('li').length).toBe(1);
+
+        // Run our key events to trigger a select action
+        ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.DOWN_ARROW));
+        ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ENTER));
+        $timeout.flush();
+
+        expect(scope.searchText).toBe('foo');
+        expect(scope.selectedItem).toBe(scope.match(scope.searchText)[0]);
+
+        scope.$apply('searchText = "food"');
+
+        $timeout.flush();
+
+        // The autocomplete automatically clears the searchText when the selectedItem was cleared.
+        expect(scope.searchText).toBe('food');
+        expect(scope.selectedItem).toBeFalsy();
+
+        element.remove();
+      }));
+
+    it('allows you to set an input id without floating label', inject(function() {
       var scope = createScope(null, {inputId: 'custom-input-id'});
       var template = '\
           <md-autocomplete\
@@ -119,7 +234,57 @@ describe('<md-autocomplete>', function() {
       element.remove();
     }));
 
-    it('should allow you to set an input id with floating label', inject(function() {
+    it('allows using ng-readonly', inject(function() {
+      var scope = createScope(null, {inputId: 'custom-input-id'});
+      var template = '\
+          <md-autocomplete\
+              md-input-id="{{inputId}}"\
+              md-selected-item="selectedItem"\
+              md-search-text="searchText"\
+              md-items="item in match(searchText)"\
+              md-item-text="item.display"\
+              placeholder="placeholder"\
+              ng-readonly="readonly">\
+            <span md-highlight-text="searchText">{{item.display}}</span>\
+          </md-autocomplete>';
+      var element = compile(template, scope);
+      var input = element.find('input');
+
+      scope.readonly = true;
+      scope.$digest();
+
+      expect(input.attr('readonly')).toBe('readonly');
+
+      scope.readonly = false;
+      scope.$digest();
+
+      expect(input.attr('readonly')).toBeUndefined();
+
+      element.remove();
+    }));
+
+    it('allows using an empty readonly attribute', inject(function() {
+      var scope = createScope(null, {inputId: 'custom-input-id'});
+      var template = '\
+          <md-autocomplete\
+              md-input-id="{{inputId}}"\
+              md-selected-item="selectedItem"\
+              md-search-text="searchText"\
+              md-items="item in match(searchText)"\
+              md-item-text="item.display"\
+              placeholder="placeholder"\
+              readonly>\
+            <span md-highlight-text="searchText">{{item.display}}</span>\
+          </md-autocomplete>';
+      var element = compile(template, scope);
+      var input = element.find('input');
+
+      expect(input.attr('readonly')).toBe('readonly');
+
+      element.remove();
+    }));
+
+    it('allows you to set an input id with floating label', inject(function() {
       var scope = createScope(null, {inputId: 'custom-input-id'});
       var template = '\
           <md-autocomplete\
@@ -140,7 +305,7 @@ describe('<md-autocomplete>', function() {
       element.remove();
     }));
 
-    it('should forward the `md-select-on-focus` attribute to the input', inject(function() {
+    it('forwards the `md-select-on-focus` attribute to the input', inject(function() {
       var scope = createScope(null, {inputId: 'custom-input-id'});
       var template =
         '<md-autocomplete ' +
@@ -163,7 +328,7 @@ describe('<md-autocomplete>', function() {
       element.remove();
     }));
 
-    it('should forward the tabindex to the input', inject(function() {
+    it('forwards the tabindex to the input', inject(function() {
       var scope = createScope(null, {inputId: 'custom-input-id'});
       var template =
         '<md-autocomplete ' +
@@ -185,7 +350,7 @@ describe('<md-autocomplete>', function() {
       element.remove();
     }));
 
-    it('should always set the tabindex of the autcomplete to `-1`', inject(function() {
+    it('always sets the tabindex of the autcomplete to `-1`', inject(function() {
       var scope = createScope(null, {inputId: 'custom-input-id'});
       var template =
         '<md-autocomplete ' +
@@ -206,7 +371,37 @@ describe('<md-autocomplete>', function() {
       element.remove();
     }));
 
-    it('should clear value when hitting escape', inject(function($mdConstant, $timeout) {
+    it('should not show a loading progress when the items object is invalid', inject(function() {
+      var scope = createScope(null, {
+        match: function() {
+          // Return an invalid object, which is not an array, neither a promise.
+          return {}
+        }
+      });
+
+      var template =
+        '<md-autocomplete ' +
+        'md-input-id="{{inputId}}" ' +
+        'md-selected-item="selectedItem" ' +
+        'md-search-text="searchText" ' +
+        'md-items="item in match(searchText)" ' +
+        'md-item-text="item.display" ' +
+        'tabindex="3"' +
+        'placeholder="placeholder">' +
+        '<span md-highlight-text="searchText">{{item.display}}</span>' +
+        '</md-autocomplete>';
+
+      var element = compile(template, scope);
+      var ctrl = element.controller('mdAutocomplete');
+
+      scope.$apply('searchText = "test"');
+
+      expect(ctrl.loading).toBe(false);
+
+      element.remove();
+    }));
+
+    it('clears the value when hitting escape', inject(function($mdConstant, $timeout) {
       var scope = createScope();
       var template = '\
           <md-autocomplete\
@@ -232,6 +427,175 @@ describe('<md-autocomplete>', function() {
       });
 
       expect(scope.searchText).toBe('');
+
+      element.remove();
+    }));
+
+    describe('md-input-maxlength', function() {
+
+      it('should correctly set the form to invalid', inject(function($timeout) {
+        var scope = createScope(null, {inputId: 'custom-input-id'});
+        var template =
+          '<form name="testForm">' +
+            '<md-autocomplete ' +
+                'md-input-id="{{inputId}}" ' +
+                'md-input-maxlength="2" ' +
+                'md-input-name="testAutocomplete" ' +
+                'md-selected-item="selectedItem" ' +
+                'md-search-text="searchText" ' +
+                'md-items="item in match(searchText)" ' +
+                'md-item-text="item.display" ' +
+                'tabindex="3"' +
+                'md-floating-label="Favorite state">' +
+              '<span md-highlight-text="searchText">{{item.display}}</span>' +
+            '</md-autocomplete>' +
+          '</form>';
+
+        var element = compile(template, scope);
+        var input = element.find('input');
+
+        expect(scope.searchText).toBe('');
+        expect(scope.testForm.$valid).toBe(true);
+
+        scope.$apply('searchText = "Exceeded"');
+
+        expect(scope.testForm.$valid).toBe(false);
+
+        element.remove();
+      }));
+
+      it('should not clear the view value if the input is invalid', inject(function($timeout) {
+        var scope = createScope(null, {inputId: 'custom-input-id'});
+        var template =
+          '<form name="testForm">' +
+            '<md-autocomplete ' +
+                'md-input-id="{{inputId}}" ' +
+                'md-input-maxlength="2" ' +
+                'md-input-name="testAutocomplete" ' +
+                'md-selected-item="selectedItem" ' +
+                'md-search-text="searchText" ' +
+                'md-items="item in match(searchText)" ' +
+                'md-item-text="item.display" ' +
+                'tabindex="3"' +
+                'md-floating-label="Favorite state">' +
+              '<span md-highlight-text="searchText">{{item.display}}</span>' +
+            '</md-autocomplete>' +
+          '</form>';
+
+        var element = compile(template, scope);
+        var input = element.find('input');
+
+        expect(scope.searchText).toBe('');
+        expect(scope.testForm.$valid).toBe(true);
+
+        input.val('Exceeded');
+        input.triggerHandler('change');
+        scope.$digest();
+
+        expect(scope.testForm.$valid).toBe(false);
+        expect(scope.searchText).toBe('Exceeded');
+
+        element.remove();
+      }));
+
+    });
+
+    describe('md-escape-options checks', function() {
+      var scope, ctrl, element;
+      var template = '\
+              <md-autocomplete\
+                  md-escape-options="{{escapeOptions}}"\
+                  md-search-text="searchText"\
+                  md-items="item in match(searchText)"\
+                  md-item-text="item.display"\
+                  placeholder="placeholder">\
+                <span md-highlight-text="searchText">{{item.display}}</span>\
+              </md-autocomplete>';
+      beforeEach( inject(function($timeout, $material) {
+        scope = createScope();
+        element = compile(template, scope);
+        ctrl = element.controller('mdAutocomplete');
+
+        $material.flushInterimElement();
+
+        // Update the scope
+        element.scope().searchText = 'fo';
+        waitForVirtualRepeat(element);
+
+        // Focus the input
+        ctrl.focus();
+        $timeout.flush();
+
+        expect(ctrl.hidden).toBe(false);
+
+        expect(scope.searchText).toBe('fo');
+
+        waitForVirtualRepeat(element);
+        $timeout.flush();
+        expect(ctrl.hidden).toBe(false);
+      }));
+
+      afterEach(function() { element.remove() });
+      it('does not clear the value nor blur when hitting escape', inject(function($mdConstant, $document, $timeout) {
+        scope.$apply('escapeOptions = "none"');
+        scope.$apply(function() {
+          ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ESCAPE));
+          $timeout.flush();
+          expect(ctrl.hidden).toBe(true);
+          ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ESCAPE));
+          $timeout.flush();
+        });
+
+        expect(scope.searchText).toBe('fo');
+        expect($document.activeElement).toBe(ctrl[0]);
+      }));
+
+      it('does not clear the value but does blur when hitting escape', inject(function($mdConstant, $document, $timeout) {
+        scope.$apply('escapeOptions = "blur"');
+        scope.$apply(function() {
+          ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ESCAPE));
+          $timeout.flush();
+          expect(ctrl.hidden).toBe(true);
+          ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ESCAPE));
+          $timeout.flush();
+        });
+
+        expect(scope.searchText).toBe('fo');
+        expect($document.activeElement).toBe(undefined);
+      }));
+
+      it('clear the value but does not blur when hitting escape', inject(function($mdConstant, $document, $timeout) {
+        scope.$apply('escapeOptions = "clear"');
+        scope.$apply(function() {
+          ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ESCAPE));
+          $timeout.flush();
+          expect(ctrl.hidden).toBe(true);
+          ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ESCAPE));
+          $timeout.flush();
+        });
+
+        expect(scope.searchText).toBe('');
+        expect($document.activeElement).toBe(ctrl[0]);
+      }));
+
+    });
+
+    it('should not show the progressbar when hitting escape on an empty input', inject(function($mdConstant, $timeout) {
+      var scope = createScope();
+      var template = '\
+          <md-autocomplete\
+              md-search-text="searchText"\
+              md-items="item in match(searchText)">\
+          </md-autocomplete>';
+      var element = compile(template, scope);
+      var ctrl = element.controller('mdAutocomplete');
+
+      $timeout.flush();
+      scope.$apply(function() {
+        ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ESCAPE));
+      });
+
+      expect(element.find('md-progress-linear').length).toBe(0);
 
       element.remove();
     }));
@@ -275,7 +639,7 @@ describe('<md-autocomplete>', function() {
   });
 
   describe('basic functionality with template', function() {
-    it('should update selected item and search text', inject(function($timeout, $material, $mdConstant) {
+    it('updates selected item and search text', inject(function($timeout, $material, $mdConstant) {
       var scope = createScope();
       var template = '\
           <md-autocomplete\
@@ -318,7 +682,60 @@ describe('<md-autocomplete>', function() {
       element.remove();
     }));
 
-    it('should compile the template against the parent scope', inject(function($timeout, $material) {
+    it('properly clears values when the item ends in a space character', inject(function($timeout, $material, $mdConstant) {
+      var myItems = ['foo ', 'bar', 'baz'].map(function(item) {
+        return {display: item};
+      });
+      var scope = createScope(myItems);
+      
+      var template = '\
+          <md-autocomplete\
+              md-selected-item="selectedItem"\
+              md-search-text="searchText"\
+              md-items="item in match(searchText)"\
+              md-item-text="item.display"\
+              placeholder="placeholder">\
+            <md-item-template>\
+              <span md-highlight-text="searchText">{{item.display}}</span>\
+            </md-item-template>\
+          </md-autocomplete>';
+      var element = compile(template, scope);
+      var ctrl = element.controller('mdAutocomplete');
+      var ul = element.find('ul');
+
+      expect(scope.searchText).toBe('');
+      expect(scope.selectedItem).toBe(null);
+
+      $material.flushInterimElement();
+
+      // Focus the input
+      ctrl.focus();
+
+      element.scope().searchText = 'fo';
+      waitForVirtualRepeat(element);
+
+      expect(scope.searchText).toBe('fo');
+      expect(scope.match(scope.searchText).length).toBe(1);
+      expect(ul.find('li').length).toBe(1);
+
+      ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.DOWN_ARROW));
+      ctrl.keydown(keydownEvent($mdConstant.KEY_CODE.ENTER));
+
+      $timeout.flush();
+
+      expect(scope.searchText).toBe('foo ');
+      expect(scope.selectedItem).toBe(scope.match(scope.searchText)[0]);
+      
+      ctrl.clear();
+      $timeout.flush();
+
+      expect(scope.searchText).toBe('');
+      expect(scope.selectedItem).toBe(null);
+
+      element.remove();
+    }));
+
+    it('compiles the template against the parent scope', inject(function($timeout, $material) {
       var scope = createScope(null, {bang: 'boom'});
       var template =
         '<md-autocomplete' +
@@ -365,7 +782,7 @@ describe('<md-autocomplete>', function() {
       element.remove();
     }));
 
-    it('should remove the md-scroll-mask on cleanup', inject(function($mdUtil, $timeout, $material) {
+    it('removes the md-scroll-mask on cleanup', inject(function($mdUtil, $timeout, $material) {
       spyOn($mdUtil, 'enableScrolling');
 
       var scope = createScope();
@@ -408,7 +825,41 @@ describe('<md-autocomplete>', function() {
       expect($mdUtil.enableScrolling).toHaveBeenCalled();
     }));
 
-    it('should ensure the parent scope digests along with the current scope', inject(function($timeout, $material) {
+    it('should initialize the search text with an empty string', inject(function($mdUtil, $timeout, $material) {
+      var scope = createScope();
+
+      // Delete our searchText variable from the generated scope, because we
+      // want to confirm, that the autocomplete uses an empty string by default.
+      delete scope.searchText;
+
+      var template =
+        '<md-autocomplete' +
+        '   md-selected-item="selectedItem"' +
+        '   md-search-text="searchText"' +
+        '   md-items="item in match(searchText)"' +
+        '   md-item-text="item.display"' +
+        '   placeholder="placeholder">' +
+        '  <md-item-template>{{item.display}}</md-item-template>' +
+        '  <md-not-found>Sorry, not found...</md-not-found>' +
+        '</md-autocomplete>';
+      var element = compile(template, scope);
+      var ctrl = element.controller('mdAutocomplete');
+
+      $material.flushOutstandingAnimations();
+
+      // Run our initial flush
+      $timeout.flush();
+      waitForVirtualRepeat(element);
+
+      // Set our search text to a value that we know doesn't exist
+      expect(scope.searchText).toBe('');
+
+      // Make sure we wrap up anything and remove the element
+      $timeout.flush();
+      element.remove();
+    }));
+
+    it('ensures the parent scope digests along with the current scope', inject(function($timeout, $material) {
       var scope = createScope(null, {bang: 'boom'});
       var template =
         '<md-autocomplete' +
@@ -590,7 +1041,7 @@ describe('<md-autocomplete>', function() {
       expect(ctrl2.hasNotFound).toBe(false);
     }));
 
-    it('should even show the md-not-found template if we have lost focus', inject(function($timeout) {
+    it('shows the md-not-found template even if we have lost focus', inject(function($timeout) {
       var scope = createScope();
       var template =
         '<md-autocomplete' +
@@ -700,8 +1151,39 @@ describe('<md-autocomplete>', function() {
     }));
   });
 
+  describe('Async matching', function() {
+
+    it('properly stops the loading indicator when clearing', inject(function($timeout, $material) {
+      var scope = createScope();
+      var template =
+        '<md-autocomplete ' +
+        '    md-search-text="searchText"' +
+        '    md-items="item in asyncMatch(searchText)" ' +
+        '    md-item-text="item.display" ' +
+        '    placeholder="placeholder">' +
+        '  <span md-highlight-text="searchText">{{item.display}}</span>' +
+        '</md-autocomplete>';
+      var element = compile(template, scope);
+      var input = element.find('input');
+      var ctrl = element.controller('mdAutocomplete');
+
+      $material.flushInterimElement();
+
+      scope.$apply('searchText = "test"');
+
+      ctrl.clear();
+
+      expect(ctrl.loading).toBe(true);
+
+      $timeout.flush();
+
+      expect(ctrl.loading).toBe(false);
+    }));
+
+  });
+
   describe('API access', function() {
-    it('should clear the selected item', inject(function($timeout) {
+    it('clears the selected item', inject(function($timeout) {
       var scope = createScope();
       var template = '\
           <md-autocomplete\
@@ -735,7 +1217,7 @@ describe('<md-autocomplete>', function() {
       element.remove();
     }));
 
-    it('should notify selected item watchers', inject(function($timeout) {
+    it('notifies selected item watchers', inject(function($timeout) {
       var scope = createScope();
       scope.itemChanged = jasmine.createSpy('itemChanged');
 
@@ -783,7 +1265,7 @@ describe('<md-autocomplete>', function() {
 
       element.remove();
     }));
-    it('should pass value to item watcher', inject(function($timeout) {
+    it('passes the value to the item watcher', inject(function($timeout) {
       var scope = createScope();
       var itemValue = null;
       var template = '\
@@ -819,7 +1301,8 @@ describe('<md-autocomplete>', function() {
   });
 
   describe('md-select-on-match', function() {
-    it('should select matching item on exact match when `md-select-on-match` is toggled', inject(function($timeout) {
+
+    it('selects matching item on exact match when `md-select-on-match` is toggled', inject(function($timeout) {
       var scope = createScope();
       var template = '\
           <md-autocomplete\
@@ -844,6 +1327,44 @@ describe('<md-autocomplete>', function() {
 
       element.remove();
     }));
+
+    it('selects matching item on exact match with caching enabled', inject(function($timeout) {
+      var scope = createScope();
+      var template = '\
+          <md-autocomplete\
+              md-select-on-match\
+              md-selected-item="selectedItem"\
+              md-search-text="searchText"\
+              md-items="item in match(searchText)"\
+              md-item-text="item.display"\
+              placeholder="placeholder">\
+            <span md-highlight-text="searchText">{{item.display}}</span>\
+          </md-autocomplete>';
+      var element = compile(template, scope);
+
+      expect(scope.searchText).toBe('');
+      expect(scope.selectedItem).toBe(null);
+
+      scope.$apply('searchText = "foo"');
+      $timeout.flush();
+
+      expect(scope.selectedItem).not.toBe(null);
+      expect(scope.selectedItem.display).toBe('foo');
+
+      scope.$apply('searchText = ""');
+      $timeout.flush();
+
+      expect(scope.selectedItem).toBeFalsy();
+
+      scope.$apply('searchText = "foo"');
+      $timeout.flush();
+
+      expect(scope.selectedItem).not.toBe(null);
+      expect(scope.selectedItem.display).toBe('foo');
+
+      element.remove();
+    }));
+
     it('should not select matching item on exact match when `md-select-on-match` is NOT toggled', inject(function($timeout) {
       var scope = createScope();
       var template = '\
@@ -868,7 +1389,7 @@ describe('<md-autocomplete>', function() {
       element.remove();
     }));
 
-    it('should select matching item using case insensitive', inject(function($timeout) {
+    it('selects matching item using case insensitive', inject(function($timeout) {
       var scope = createScope(null, null, true);
       var template =
         '<md-autocomplete ' +
@@ -894,6 +1415,51 @@ describe('<md-autocomplete>', function() {
 
       element.remove();
     }));
+  });
+
+  describe('when requiring a match', function() {
+
+    it('should correctly update the validity', inject(function($timeout) {
+      var scope = createScope();
+      var template = '\
+          <form name="form">\
+            <md-autocomplete\
+                md-input-name="autocomplete"\
+                md-selected-item="selectedItem"\
+                md-search-text="searchText"\
+                md-items="item in match(searchText)"\
+                md-item-text="item.display"\
+                placeholder="placeholder"\
+                md-require-match="true">\
+              <span md-highlight-text="searchText">{{item.display}}</span>\
+            </md-autocomplete>\
+          </form>';
+      var element = compile(template, scope);
+      var ctrl = element.find('md-autocomplete').controller('mdAutocomplete');
+
+      element.scope().searchText = 'fo';
+      $timeout.flush();
+
+      ctrl.select(0);
+      $timeout.flush();
+
+      expect(scope.searchText).toBe('foo');
+      expect(scope.selectedItem).not.toBeNull();
+      expect(scope.selectedItem.display).toBe('foo');
+      expect(scope.match(scope.searchText).length).toBe(1);
+
+      expect(scope.form.autocomplete.$error['md-require-match']).toBeFalsy();
+
+      ctrl.clear();
+
+      scope.$apply();
+
+      expect(scope.searchText).toBe('');
+      expect(scope.selectedItem).toBe(null);
+      expect(scope.form.autocomplete.$error['md-require-match']).toBeTruthy();
+
+    }));
+
   });
 
   describe('when required', function() {
@@ -927,7 +1493,7 @@ describe('<md-autocomplete>', function() {
       element.remove();
     });
 
-    it('should validate an empty `required` as true', function() {
+    it('validates an empty `required` as true', function() {
       var scope = createScope();
       var template = '\
           <md-autocomplete\
@@ -946,7 +1512,7 @@ describe('<md-autocomplete>', function() {
       expect(ctrl.isRequired).toBe(true);
     });
 
-    it('should correctly validate an interpolated `ng-required` value', function() {
+    it('correctly validates an interpolated `ng-required` value', function() {
       var scope = createScope();
       var template = '\
           <md-autocomplete\
@@ -975,10 +1541,29 @@ describe('<md-autocomplete>', function() {
       expect(ctrl.isRequired).toBe(true);
     });
 
+    it('forwards the md-no-asterisk attribute', function() {
+      var scope = createScope();
+      var template = '\
+          <md-autocomplete\
+              md-selected-item="selectedItem"\
+              md-search-text="searchText"\
+              md-items="item in match(searchText)"\
+              md-item-text="item.display"\
+              md-min-length="0" \
+              required\
+              md-no-asterisk="true"\
+              md-floating-label="Asterisk Label">\
+            <span md-highlight-text="searchText">{{item.display}}</span>\
+          </md-autocomplete>';
+      var element = compile(template, scope);
+      var input = element.find('input');
+
+      expect(input.attr('md-no-asterisk')).toBe('true');
+    });
   });
 
   describe('md-highlight-text', function() {
-    it('should update when content is modified', inject(function() {
+    it('updates when content is modified', inject(function() {
       var template = '<div md-highlight-text="query">{{message}}</div>';
       var scope = createScope(null, {message: 'some text', query: 'some'});
       var element = compile(template, scope);
@@ -994,6 +1579,40 @@ describe('<md-autocomplete>', function() {
       scope.$apply();
 
       expect(element.html()).toBe('<span class="highlight">so</span>me more text');
+
+      element.remove();
+    }));
+
+    it('should properly apply highlight flags', inject(function() {
+      var template = '<div md-highlight-text="query" md-highlight-flags="{{flags}}">{{message}}</div>';
+      var scope = createScope(null, {message: 'Some text', query: 'some', flags: '^i'});
+      var element = compile(template, scope);
+
+      expect(element.html()).toBe('<span class="highlight">Some</span> text');
+
+      scope.query = 'text';
+      scope.$apply();
+
+      expect(element.html()).toBe('Some text');
+
+      scope.message = 'Some text, some flags';
+      scope.query = 'some';
+      scope.flags = 'ig';
+      element = compile(template, scope);
+
+      expect(element.html()).toBe('<span class="highlight">Some</span> text, <span class="highlight">some</span> flags');
+
+      scope.query = 'some';
+      scope.flags = '^i';
+      element = compile(template, scope);
+
+      expect(element.html()).toBe('<span class="highlight">Some</span> text, some flags');
+
+      scope.query = 's';
+      scope.flags = '$i';
+      element = compile(template, scope);
+
+      expect(element.html()).toBe('Some text, some flag<span class="highlight">s</span>');
 
       element.remove();
     }));
